@@ -1,0 +1,766 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: The template creates TGW & an Egress VPC that hosts squid servers for internet. Author shkahma@
+Parameters:
+  CidrBlock:
+    Default: '100.64.0.0/16'
+    Description: The CIDR Block for the VPC
+    Type: String
+  AZCount:
+    Type: Number
+    Description: "# of AZs. Max - 2"
+    MinValue: 1
+    MaxValue: 2
+    Default: 2
+  AmazonLinuxAMI:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+    Description: DO NOT CHANGE - AMI Used for Squid Proxy.
+
+Conditions: 
+  TwoAZs:  !Equals [ !Ref AZCount, 2 ]
+
+Resources:
+
+  TransitGateway:
+    Type: "AWS::EC2::TransitGateway"
+    Properties:
+      AmazonSideAsn: 64513
+      AutoAcceptSharedAttachments: enable
+      DefaultRouteTableAssociation: "disable"
+      DefaultRouteTablePropagation: "disable"
+      Description: A transit gateway to support a centralized FW server
+      Tags: 
+        - Key: Name
+          Value: !Sub ${AWS::StackName}
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref CidrBlock
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: !Sub EgressVpc-${AWS::StackName}
+
+  PublicEgressVpcSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Sub
+        - ${a}.${b}.0.0/24
+        - a: !Select [0, !Split ['.', !Select [0, !Split [ "/" , !Ref CidrBlock ]]]]
+          b: !Select [1, !Split ['.', !Select [0, !Split [ "/" , !Ref CidrBlock ]]]]
+      AvailabilityZone: 
+        Fn::Select: 
+          - 0
+          - Fn::GetAZs: ""
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: !Sub Public-EgressVpc-${AWS::StackName}
+  PublicEgressVpcSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: TwoAZs
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Sub
+        - ${a}.${b}.1.0/24
+        - a: !Select [0, !Split ['.', !Select [0, !Split [ "/" , !Ref CidrBlock ]]]]
+          b: !Select [1, !Split ['.', !Select [0, !Split [ "/" , !Ref CidrBlock ]]]]
+      AvailabilityZone: 
+        Fn::Select: 
+          - 1
+          - Fn::GetAZs: ""
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: !Sub Public-2-EgressVpc-${AWS::StackName}
+  PrivateEgressVpcSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Sub
+        - ${a}.${b}.2.0/24
+        - a: !Select [0, !Split ['.', !Select [0, !Split [ "/" , !Ref CidrBlock ]]]]
+          b: !Select [1, !Split ['.', !Select [0, !Split [ "/" , !Ref CidrBlock ]]]]      
+      AvailabilityZone: 
+        Fn::Select: 
+          - 0
+          - Fn::GetAZs: ""
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: !Sub Private-EgressVpc-${AWS::StackName}
+  PrivateEgressVpcSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: TwoAZs
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Sub
+        - ${a}.${b}.3.0/24
+        - a: !Select [0, !Split ['.', !Select [0, !Split [ "/" , !Ref CidrBlock ]]]]
+          b: !Select [1, !Split ['.', !Select [0, !Split [ "/" , !Ref CidrBlock ]]]]
+      AvailabilityZone: 
+        Fn::Select: 
+          - 1
+          - Fn::GetAZs: ""
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: !Sub Private-2-EgressVpc-${AWS::StackName}
+  TGWAttchSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Sub
+        - ${a}.${b}.4.0/24
+        - a: !Select [0, !Split ['.', !Select [0, !Split [ "/" , !Ref CidrBlock ]]]]
+          b: !Select [1, !Split ['.', !Select [0, !Split [ "/" , !Ref CidrBlock ]]]]      
+      AvailabilityZone: 
+        Fn::Select: 
+          - 0
+          - Fn::GetAZs: ""
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: !Sub TGWAttch-EgressVpc1-${AWS::StackName}          
+  TGWAttchSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: TwoAZs
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Sub
+        - ${a}.${b}.5.0/24
+        - a: !Select [0, !Split ['.', !Select [0, !Split [ "/" , !Ref CidrBlock ]]]]
+          b: !Select [1, !Split ['.', !Select [0, !Split [ "/" , !Ref CidrBlock ]]]] 
+      AvailabilityZone: 
+        Fn::Select: 
+          - 1
+          - Fn::GetAZs: ""
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: !Sub TGWAttch-EgressVpc2-${AWS::StackName}
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref 'VPC'
+      InternetGatewayId: !Ref 'InternetGateway'
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: !Sub Public-EgressVpc-${AWS::StackName}
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: !Sub Private-EgressVpc-${AWS::StackName}
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Condition: TwoAZs
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: !Sub Private-2-EgressVpc-${AWS::StackName}
+  TGWAttchRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: !Sub TGWAttch-EgressVpc-${AWS::StackName}
+  TGWAttchRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Condition: TwoAZs
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: !Sub TGWAttch2-EgressVpc-${AWS::StackName}
+
+  FWENI:
+    Type: AWS::EC2::NetworkInterface
+    Properties: 
+      Description: String
+      GroupSet:
+        - !Ref 'FWSecurityGroup'
+      SourceDestCheck: false
+      SubnetId: !Ref TGWAttchSubnet
+
+  FWENI2:
+    Type: AWS::EC2::NetworkInterface
+    Condition: TwoAZs
+    Properties: 
+      Description: String
+      GroupSet:
+        - !Ref 'FWSecurityGroup'
+      SourceDestCheck: false
+      SubnetId: !Ref TGWAttchSubnet2
+
+  FWSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: Enable SSH access via port 22
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 100.64.0.0/16
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: !Sub FWSecurityGroup-${AWS::StackName}
+
+  Route:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref 'RouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref 'InternetGateway'
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PublicEgressVpcSubnet'
+      RouteTableId: !Ref 'RouteTable'
+  SubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: TwoAZs
+    Properties:
+      SubnetId: !Ref 'PublicEgressVpcSubnet2'
+      RouteTableId: !Ref 'RouteTable'
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref 'PrivateRouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref 'NATGateway'
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Condition: TwoAZs
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref 'PrivateRouteTable2'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref 'NATGateway2'
+
+  TGWAttchRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref 'TGWAttchRouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      NetworkInterfaceId: !Ref 'FWENI'
+  TGWAttchRoute2:
+    Type: AWS::EC2::Route
+    Condition: TwoAZs
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref 'TGWAttchRouteTable2'
+      DestinationCidrBlock: 0.0.0.0/0
+      NetworkInterfaceId: !Ref 'FWENI2'
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PrivateEgressVpcSubnet'
+      RouteTableId: !Ref 'PrivateRouteTable'
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: TwoAZs
+    Properties:
+      SubnetId: !Ref 'PrivateEgressVpcSubnet2'
+      RouteTableId: !Ref 'PrivateRouteTable2'
+  TGWAttchRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'TGWAttchSubnet'
+      RouteTableId: !Ref 'TGWAttchRouteTable'
+  TGWAttchRouteTable2Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: TwoAZs
+    Properties:
+      SubnetId: !Ref 'TGWAttchSubnet2'
+      RouteTableId: !Ref 'TGWAttchRouteTable2'
+
+  NetworkAcl:
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+  InboundHTTPNetworkAclEntry:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref 'NetworkAcl'
+      RuleNumber: '100'
+      Protocol: '-1'
+      RuleAction: allow
+      Egress: 'false'
+      CidrBlock: 0.0.0.0/0
+  OutboundHTTPNetworkAclEntry:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref 'NetworkAcl'
+      RuleNumber: '100'
+      Protocol: '-1'
+      RuleAction: allow
+      Egress: 'true'
+      CidrBlock: 0.0.0.0/0
+  PublicEgressVpcSubnetNetworkAclAssociation:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref 'PublicEgressVpcSubnet'
+      NetworkAclId: !Ref 'NetworkAcl'
+  PublicEgressVpcSubnet2NetworkAclAssociation:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Condition: TwoAZs
+    Properties:
+      SubnetId: !Ref 'PublicEgressVpcSubnet2'
+      NetworkAclId: !Ref 'NetworkAcl'
+  PrivateEgressVpcSubnetNetworkAclAssociation:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref 'PrivateEgressVpcSubnet'
+      NetworkAclId: !Ref 'NetworkAcl'
+  PrivateEgressVpcSubnet2NetworkAclAssociation:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Condition: TwoAZs
+    Properties:
+      SubnetId: !Ref 'PrivateEgressVpcSubnet2'
+      NetworkAclId: !Ref 'NetworkAcl'
+  TGWAttchSubnetNetworkAclAssociation:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref 'TGWAttchSubnet'
+      NetworkAclId: !Ref 'NetworkAcl'
+  TGWAttchSubnet2NetworkAclAssociation:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Condition: TwoAZs
+    Properties:
+      SubnetId: !Ref 'TGWAttchSubnet2'
+      NetworkAclId: !Ref 'NetworkAcl'
+  IPAddress:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+  IPAddress2:
+    Type: AWS::EC2::EIP
+    Condition: TwoAZs
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt IPAddress.AllocationId
+      SubnetId: !Ref PublicEgressVpcSubnet
+      Tags: 
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+  NATGateway2:
+    Type: AWS::EC2::NatGateway
+    Condition: TwoAZs
+    Properties: 
+      AllocationId: !GetAtt IPAddress2.AllocationId
+      SubnetId: !Ref PublicEgressVpcSubnet2
+      Tags: 
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+      
+  EgressVpcAttachment:
+    Type: "AWS::EC2::TransitGatewayAttachment"
+    Properties:
+      SubnetIds:
+        !If 
+        - TwoAZs
+        -
+          - !Ref 'TGWAttchSubnet'
+          - !Ref 'TGWAttchSubnet2'
+        -
+          - !Ref 'TGWAttchSubnet'
+      Tags: 
+        - Key: Name
+          Value: !Sub EgressVpc-${AWS::StackName}
+      TransitGatewayId: !Ref TransitGateway
+      VpcId: !Ref VPC
+  SecurityTransitGatewayRouteTable:
+    Type: "AWS::EC2::TransitGatewayRouteTable"
+    Properties:
+      Tags: 
+        - Key: Name
+          Value: !Sub EgressVpc-${AWS::StackName}
+      TransitGatewayId: !Ref TransitGateway
+  SpokeTransitGatewayRouteTable:
+    Type: "AWS::EC2::TransitGatewayRouteTable"
+    Properties:
+      Tags: 
+        - Key: Name
+          Value: !Sub SpokeVpc-${AWS::StackName}
+      TransitGatewayId: !Ref TransitGateway
+  SpokeDefaultTGWRoute:
+    Type: "AWS::EC2::TransitGatewayRoute"
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      TransitGatewayAttachmentId: !Ref EgressVpcAttachment
+      TransitGatewayRouteTableId: !Ref SpokeTransitGatewayRouteTable
+  SecurityTransitGatewayRoutePropagation:
+    Type: "AWS::EC2::TransitGatewayRouteTablePropagation"
+    Properties:
+      TransitGatewayAttachmentId: !Ref EgressVpcAttachment
+      TransitGatewayRouteTableId: !Ref SecurityTransitGatewayRouteTable
+  SpokeTransitGatewayRoutePropagation:
+    Type: "AWS::EC2::TransitGatewayRouteTablePropagation"
+    Properties:
+      TransitGatewayAttachmentId: !Ref EgressVpcAttachment
+      TransitGatewayRouteTableId: !Ref SpokeTransitGatewayRouteTable
+  EgressVpcTgwAssociation:
+    Type: "AWS::EC2::TransitGatewayRouteTableAssociation"
+    Properties:
+      TransitGatewayAttachmentId: !Ref EgressVpcAttachment
+      TransitGatewayRouteTableId: !Ref SecurityTransitGatewayRouteTable
+#------------------ EC2 Stuff ------
+
+  FWRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+  FWProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties: 
+      Roles:
+        - !Ref FWRole
+  FWRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ec2:DetachNetworkInterface
+              - ec2:DescribeNetworkInterfaces
+              - ec2:AttachNetworkInterface
+            Resource:
+              - '*'
+      Description: Role for the FW instance
+      Roles:
+        - !Ref 'FWRole'
+  FWASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn:
+    - PrivateSubnetRouteTableAssociation
+    Properties:
+      AutoScalingGroupName: !Sub proxy-ASG1-${AWS::StackName}
+      HealthCheckType: EC2
+      LaunchConfigurationName: !Ref FWLC
+      MaxSize: 1
+      DesiredCapacity: 1
+      MinSize: 1
+      Tags:
+       - Key: Application
+         Value: !Ref 'AWS::StackId'
+         PropagateAtLaunch: true
+       - Key: Name
+         Value: !Sub proxy-az1-${AWS::StackName}
+         PropagateAtLaunch: true
+      VPCZoneIdentifier:
+        - !Ref PrivateEgressVpcSubnet
+
+  FWASG2:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Condition: TwoAZs
+    DependsOn:
+    - PrivateSubnetRouteTableAssociation
+    Properties:
+      AutoScalingGroupName: !Sub proxy-ASG2-${AWS::StackName}
+      HealthCheckType: EC2
+      LaunchConfigurationName: !Ref FWLC
+      MaxSize: 1
+      DesiredCapacity: 1
+      MinSize: 1
+      Tags:
+       - Key: Application
+         Value: !Ref 'AWS::StackId'
+         PropagateAtLaunch: true
+       - Key: Name
+         Value: !Sub proxy-az2-${AWS::StackName}
+         PropagateAtLaunch: true
+      VPCZoneIdentifier:
+        - !Ref PrivateEgressVpcSubnet2
+
+  FWLC:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      Comment: Install a transparent squid proxy
+      AWS::CloudFormation::Init:
+        configSets:
+          Install:
+          - Install
+        Install:
+          files:
+            /etc/squid/attach-eni.sh:
+              content: !Sub 
+              - |
+                #!/bin/bash
+                NEXT_WAIT_TIME=0
+                CURR_AZ=$(curl http://169.254.169.254/latest/meta-data/placement/availability-zone)
+                AZ1="${AZ1}"
+                AZ2="${AZ2}"
+                echo "[$AZ1]"
+                echo "[$AZ2]"
+                echo "[$CURR_AZ]"
+
+                if [ "$CURR_AZ" == "$AZ1" ]; then
+                  FW_ENI="${FWENI}"
+                  echo "In AZ1...."
+                else
+                  FW_ENI="${FWENI2}"
+                  echo "In AZ2...."
+                fi
+
+                echo "[$CURR_AZ]"
+
+
+                FW_ENI_STATUS=$(aws ec2 describe-network-interfaces --filter Name=network-interface-id,Values=$FW_ENI --region ${AWS::Region} --query NetworkInterfaces[0].Status --output text)
+
+                if [ "$FW_ENI_STATUS" == "in-use" ]; then
+                  echo "ENI is in use"
+
+                  FW_ATTACHMENT_ID=$(aws ec2 describe-network-interfaces --filter Name=network-interface-id,Values=$FW_ENI --region ${AWS::Region} --query NetworkInterfaces[0].Attachment.AttachmentId --output text)
+
+                  aws ec2 detach-network-interface --attachment-id $FW_ATTACHMENT_ID --region ${AWS::Region}
+                fi
+
+                until [ "$FW_ENI_STATUS" == "available" ] || [ $NEXT_WAIT_TIME -eq 8 ]; do
+                   sleep $(( NEXT_WAIT_TIME++ ))
+
+                   FW_ENI_STATUS=$(aws ec2 describe-network-interfaces --filter Name=network-interface-id,Values=$FW_ENI --region ${AWS::Region} --query NetworkInterfaces[0].Status --output text)
+                done
+
+                INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+
+                aws ec2 attach-network-interface --network-interface-id $FW_ENI --instance-id $INSTANCE_ID --device-index 1 --region ${AWS::Region}
+                sleep 20
+                route add -net 10.0.0.0/8 dev eth1
+                route add -net 172.16.0.0/12 dev eth1
+                route add -net 192.168.0.0/16 dev eth1
+              - FWENI: !Ref FWENI
+                FWENI2: !If 
+                  - TwoAZs
+                  - !Ref FWENI2
+                  - !Ref FWENI
+                AZ1:
+                  Fn::Select: 
+                  - 0
+                  - Fn::GetAZs: ""
+                AZ2:
+                  Fn::Select: 
+                  - 1
+                  - Fn::GetAZs: ""
+              mode: '000755'
+              owner: root
+              group: root
+            /etc/squid/squid.proxy.conf:
+              content: !Sub |
+                visible_hostname FW
+                #Handling HTTP requests
+                http_port 3129 intercept
+                #acl allowed_http_sites dstdomain DOMAIN
+                #Handling HTTPS requests
+                https_port 3130 cert=/etc/squid/ssl/squid.pem ssl-bump intercept
+                acl SSL_port port 443
+                http_access allow SSL_port
+                #acl allowed_https_sites ssl::server_name DOMAIN
+                acl step1 at_step SslBump1
+                acl step2 at_step SslBump2
+                acl step3 at_step SslBump3
+                ssl_bump peek step1 all
+                ssl_bump peek step2 all
+                ssl_bump splice step3 all
+                ssl_bump terminate step2 all
+                http_access allow all
+                #http_access deny all
+              mode: '000644'
+              owner: root
+              group: root
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.FWLC.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource FWASG --region ${AWS::Region} runas=root
+              mode: '000400'
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+    Properties:
+      ImageId: !Ref AmazonLinuxAMI
+      InstanceType: 't2.micro'
+      IamInstanceProfile: !Ref 'FWProfile'
+      SecurityGroups:
+       - !Ref 'FWSecurityGroup'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y squid
+          yum install -y aws-cfn-bootstrap
+          
+          echo "Yum Install Complete"
+
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --configsets Install --resource FWLC --region ${AWS::Region}
+          /etc/squid/attach-eni.sh
+
+          mv /etc/squid/squid.conf /etc/squid/squid.orig.conf
+
+          cat /etc/squid/squid.proxy.conf
+          cp /etc/squid/squid.proxy.conf /etc/squid/squid.conf
+
+          mkdir /etc/squid/ssl
+          cd /etc/squid/ssl
+          openssl genrsa -out squid.key 2048
+          openssl req -new -key squid.key -out squid.csr -subj "/C=XX/ST=XX/L=squid/O=squid/CN=squid"
+          openssl x509 -req -days 3650 -in squid.csr -signkey squid.key -out squid.crt
+          cat squid.key squid.crt | tee squid.pem
+          echo 1 > /proc/sys/net/ipv4/ip_forward
+          iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 3129
+          iptables -t nat -A PREROUTING -p tcp --dport 443 -j REDIRECT --to-port 3130
+          iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+          iptables -A FORWARD -i eth0 -o eth1 -m state  --state RELATED,ESTABLISHED -j ACCEPT
+          iptables -A FORWARD -i eth1 -o eth0 -j ACCEPT
+          ifconfig -a
+          sleep 5
+          ifconfig -a
+          route add -net 10.0.0.0/8 dev eth1
+          route add -net 172.16.0.0/12 dev eth1
+          route add -net 192.168.0.0/16 dev eth1
+          service iptables save
+          service squid start
+
+          # -e $? 
+          /opt/aws/bin/cfn-signal --stack ${AWS::StackName} --resource FWLC --region ${AWS::Region}
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT15M
+
+Outputs:
+  Name:
+    Value: !Ref AWS::StackName
+  TransitGateway:
+    Value: !Ref TransitGateway
+    Export: 
+      Name: !Sub ${AWS::StackName}-TransitGateway
+  ImageId:
+    Value: !Ref AmazonLinuxAMI
+    Export:
+      Name: !Sub ${AWS::StackName}-ImageId
+  TgwRouteTable:
+    Value: !Ref SpokeTransitGatewayRouteTable
+    Export:
+      Name: !Sub ${AWS::StackName}-TgwRouteTable
+  TgwEgressVpcRouteTable:
+    Value: !Ref SecurityTransitGatewayRouteTable
+    Export:
+      Name: !Sub ${AWS::StackName}-TgwEgressVpcRouteTable
+  EgressVpc:
+    Value: !Ref VPC
+    Description: The VPC ID for the security VPC.
+    Export:
+      Name: !Sub ${AWS::StackName}-EgressVpc    
+  PrivateRouteTable:
+    Value: !Ref PrivateRouteTable
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateRouteTable    
+  TGWAttchRouteTable:
+    Value: !Ref TGWAttchRouteTable
+    Export:
+      Name: !Sub ${AWS::StackName}-TGWAttchRouteTable    
+  PrivateRouteTable2:
+    Value: !If 
+      - TwoAZs
+      - !Ref PrivateRouteTable2
+      - SingleAZ
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateRouteTable2      
+  TGWAttchRouteTable2:
+    Value: !If 
+      - TwoAZs
+      - !Ref TGWAttchRouteTable2
+      - SingleAZ
+    Export:
+      Name: !Sub ${AWS::StackName}-TGWAttchRouteTable2      
