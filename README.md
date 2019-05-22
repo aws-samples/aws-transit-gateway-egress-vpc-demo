@@ -21,9 +21,8 @@ Following are the key Cloud Formation Templates we'll use in this lab:
 
 | File name | Purpose | Quick Launch |
 |-----------|---------|---------|
-|[egress-vpc.yaml](https://github.com/aws-samples/aws-transit-gateway-egress-vpc-demo/raw/master/tgw-egress-solution/egress-vpc.yaml)| This template creates all necessary resources required for Egress VPC including TGW, Route Partitions, Route Tables, Attachments as well as squid based proxy servers in each AZ. | [![Launch Stack in US-East-1](images/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?stackName=EgressVPC&templateURL=https://s3-ap-southeast-2.amazonaws.com/shkahma-devlabs2019/egress-vpc.yaml)|
-|[spoke-vpc.yaml](https://github.com/aws-samples/aws-transit-gateway-egress-vpc-demo/raw/master/tgw-egress-solution/spoke-vpc.yaml)| This template will create a Spoke VPC in the same account and attachg it to TGW as well as update the route tables where necessary. | [![Launch Stack in US-East-1](images/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?stackName=SpokeVPC&templateURL=https://s3-ap-southeast-2.amazonaws.com/shkahma-devlabs2019/spoke-vpc.yaml)|
-
+|[egress-vpc.yaml](https://github.com/aws-samples/aws-transit-gateway-egress-vpc-demo/raw/master/egress-vpc.yaml)| This template creates all necessary resources required for Egress VPC including TGW, Route Partitions, Route Tables, Attachments as well as squid based proxy servers in each AZ. | [![Launch Stack in US-East-1](images/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?stackName=EgressVPC&templateURL=https://s3-ap-southeast-2.amazonaws.com/shkahma-devlabs2019/egress-vpc.yaml)|
+|[spoke-vpc.yaml](https://github.com/aws-samples/aws-transit-gateway-egress-vpc-demo/raw/master/spoke-vpc.yaml)| This template will create a Spoke VPC in the same account and attachg it to TGW as well as update the route tables where necessary. | [![Launch Stack in US-East-1](images/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?stackName=SpokeVPC&templateURL=https://s3-ap-southeast-2.amazonaws.com/shkahma-devlabs2019/spoke-vpc.yaml)|
 Architecture:
 
 ![Network Architecture](images/lab-detailed.png)
@@ -35,14 +34,14 @@ Architecture:
 Note: Ensure that the role you are assuming via CLI has appropriate permissions to perform below tasks.
 
 ```
-aws cloudformation create-stack --template-url https://github.com/aws-samples/aws-transit-gateway-egress-vpc-demo/raw/master/tgw-egress-solution/egress-vpc.yaml --stack-name TGW-Egress-VPC-V1 --capabilities CAPABILITY_IAM --region us-east-1
+aws cloudformation create-stack --template-url https://s3-ap-southeast-2.amazonaws.com/shkahma-devlabs2019/egress-vpc.yaml --stack-name TGW-Egress-VPC-V1 --capabilities CAPABILITY_IAM --region us-east-1
 ```
 
 **Web Console:**
 
 Go to Cloud Formation on the AWS Web console.
 
-- Download the latest template (or clone the repo itself): https://github.com/aws-samples/aws-transit-gateway-egress-vpc-demo/raw/master/tgw-egress-solution/egress-vpc.yaml
+- Download the latest template (or clone the repo itself): https://github.com/aws-samples/aws-transit-gateway-egress-vpc-demo/raw/master/egress-vpc.yaml
 - Switch to US East (N. Virginia)
 - Click on "Create Stack"
 
@@ -68,14 +67,14 @@ Go to Cloud Formation on the AWS Web console.
 Note: Ensure that the role you are assuming via CLI has appropriate permissions to perform below tasks.
 
 ```
-aws cloudformation create-stack --template-url https://github.com/aws-samples/aws-transit-gateway-egress-vpc-demo/raw/master/tgw-egress-solution/spoke-vpc.yaml  --stack-name TGW-Spoke-VPC-V1 --parameters ParameterKey=ParentStackName,ParameterValue=TGW-Egress-VPC-V1 --capabilities CAPABILITY_IAM --region us-east-1
+aws cloudformation create-stack --template-url https://s3-ap-southeast-2.amazonaws.com/shkahma-devlabs2019/spoke-vpc.yaml  --stack-name TGW-Spoke-VPC-V1 --parameters ParameterKey=ParentStackName,ParameterValue=TGW-Egress-VPC-V1 --capabilities CAPABILITY_IAM --region us-east-1
 ```
 
 **Web Console:**
 
 If not already - Go to Cloud Formation on the AWS Web console.
 
-- Download the latest template (or clone the repo itself): https://github.com/aws-samples/aws-transit-gateway-egress-vpc-demo/raw/master/tgw-egress-solution/spoke-vpc.yaml
+- Download the latest template (or clone the repo itself): https://github.com/aws-samples/aws-transit-gateway-egress-vpc-demo/raw/master/spoke-vpc.yaml
 - Click on "Create Stack"
 
   ![Create Stack](images/diagram1.png)
